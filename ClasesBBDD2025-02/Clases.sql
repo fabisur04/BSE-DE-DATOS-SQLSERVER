@@ -910,6 +910,73 @@ select * from Estudiante
 											GO	
 */
                   --21/10/2025
---
+--Trigger ELIMINACION
 
+--Al eliminar un estudiante, verificar si el rut termina en k, y en ese caso, no permitir eliminar.
+--Para ello, crear una funcion qeue extraiga el DV de un rut dado. Utulice ésta funcion en ekl trigger
+
+--Primero, funcion que entrega el digito verificador
+
+												CREATE or alter FUNCTION DVer
+												(
+													@Rut nchar(10)
+												)
+												RETURNS char(1)
+												AS
+												BEGIN
+													return RIGHT(TRIM(@Rut), 1)
+												END
+												GO
+
+
+--Segundo, Trigger
+
+							CREATE or alter TRIGGER Estudiante_Delete
+							   ON  Estudiante
+							   AFTER Delete
+							AS 
+							BEGIN
+								-- SET NOCOUNT ON added to prevent extra result sets from
+								-- interfering with SELECT statements.
+								SET NOCOUNT ON;
+
+								-- Insert statements for trigger here
+								if exists (
+											select del.rut_estudiante
+											from DELETED del
+											where dbo.DigVer2(del.rut_estudiante)='K')
+								begin
+									RAiserror('Error. Al menos un estudiante tiene DV "K". Se cancela la eliminacion',16,1)
+									Rollback
+								End 
+
+							END
+							GO
+
+--Llamar a la eliminacion 'DELETE'
+Delete Estudiante 
+where rut_estudiante='3-K'
+
+-------------------------------------------------------------------------------------------------------------------
+--Que entregue el digito verificador despues del guión
+
+									CREATE or alter FUNCTION DigVer2
+									(
+										@Rut nchar(10)
+									)
+									RETURNS nchar (1)
+									AS
+									BEGIN
+										declare @posgion tinyint=patindex('%-%', trim(@Rut))
+
+										if @posgion >0 and LEN(TRIM(@Rut))>@posgion
+										begin	
+											return substring(TRIM(@Rut), @posgion +1,1)
+										end
+
+										return 0
+									END
+									GO
+
+							--Clase 23/10/2025
 --
