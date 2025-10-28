@@ -979,4 +979,31 @@ where rut_estudiante='3-K'
 									GO
 
 							--Clase 23/10/2025
+--Cambio de base de datos 
+--Agregar trigger a tabla comuna, no agregue una comuna que ya existe 
+
+CREATE or alter TRIGGER Comuna_Update
+   ON  Comuna
+   AFTER Update
+AS 
+BEGIN
+	SET NOCOUNT ON;
+	
+	if exists(
+				select com.nombre_comuna, count(*)
+				from Comuna com, inserted ins 
+				where com.nombre_comuna=ins.nombre_comuna
+				group by com.nombre_comuna
+				having count(*)>1
+				)
+
+	begin
+		Raiserror('Se ha modificado el nombre de una comuna que ya existe ',16,1)
+		rollback
+	end
+END
+GO
+
+
+				--Clase 28/10/2025
 --
