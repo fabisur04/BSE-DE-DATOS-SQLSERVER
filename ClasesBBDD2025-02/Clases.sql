@@ -663,7 +663,7 @@ exec Buscar_Algo NULL, NULL,'1970-10-20',NULL
 exec Buscar_Algo NULL, NULL,NULL,NULL
 
 
-											/*
+											
 											CREATE or ALTER PROCEDURE Buscar_Algo
 												@Apellido_Paterno_estudiante nchar(50),
 												@Apellido_Materno_estudiante nchar(50),
@@ -692,7 +692,7 @@ exec Buscar_Algo NULL, NULL,NULL,NULL
 
 											END
 											GO
-											*/
+											
 								--09/10/2025
 --TRIGGER
 --(disparador) o (Gatillador)
@@ -734,33 +734,35 @@ GO
 -- MARTES 14/10
 
 -- 49: Asegurar que Siempre la fecha de rgistro sea la fecha actual al agregar un Estudiante:
-/* CREATE OR ALTER TRIGGER Fecha_Hoy
-  ON  Estudiante
-  AFTER INSERT
-AS
-BEGIN
-SET NOCOUNT ON;
-DECLARE @Edad TINYINT
-DECLARE @Largo_Nombre TINYINT
-SELECT @Edad = dbo.Edad(ins.fecha_nacimiento)
-FROM INSERTED ins
+													 CREATE OR ALTER TRIGGER Fecha_Hoy
+													  ON  Estudiante
+													  AFTER INSERT
+													AS
+													BEGIN
+													SET NOCOUNT ON;
+													DECLARE @Edad TINYINT
+													DECLARE @Largo_Nombre TINYINT
+													SELECT @Edad = dbo.Edad(ins.fecha_nacimiento)
+													FROM INSERTED ins
 
-IF @Edad < 18
-ROLLBACK
+													IF @Edad < 18
+													ROLLBACK
 
-SELECT @Largo_Nombre = LEN(TRIM(ins.nombre_estudiante))
-FROM INSERTED ins
+													SELECT @Largo_Nombre = LEN(TRIM(ins.nombre_estudiante))
+													FROM INSERTED ins
 
-IF @Largo_Nombre < 3
-ROLLBACK
+													IF @Largo_Nombre < 3
+													ROLLBACK
 
-UPDATE Estudiante
-SET fecha_registro = GETDATE()
-WHERE rut_estudiante = (SELECT ins.rut_estudiante
-FROM INSERTED ins)
+													UPDATE Estudiante
+													SET fecha_registro = GETDATE()
+													WHERE rut_estudiante = (SELECT ins.rut_estudiante
+													FROM INSERTED ins)
 
-END
-GO  */
+													END
+													GO  
+
+
 EXEC Estudiante_Insertar '4-4', 'Doña Tremebunda', ' Contreras', 'Lizama', '1960-06-01', 2
 SELECT *
 FROM Estudiante
@@ -789,7 +791,7 @@ select * from Estudiante
 --CON RAISERROR
 
 
-                        /*
+                        
                         USE [Estudiante]
                         GO
                         /****** Object:  Trigger [dbo].[Estudiante_Insert]    Script Date: 16-10-2025 8:56:03 ******/
@@ -836,13 +838,13 @@ select * from Estudiante
                         
                         
                         END
-                        */
+                        
 
 					--17/10/2025
 --Revision de prueba
 
 --Ejercicio 1
-/*
+
 											CREATE FUNCTION TotalEquipo
 											(	
 												@nombreDepartamento1 nchar(50),
@@ -872,10 +874,10 @@ select * from Estudiante
 												return @Restultado
 											)
 											GO
-*/
+
 
 --Ejercicio 2
-/*
+
 											CREATE PROCEDURE Pregunta2Nombre
 												@nombreDepartamento1	nchar(50),
 												@nombreDepartamento2	nchar(50),
@@ -908,7 +910,7 @@ select * from Estudiante
 									  
 											END									  		
 											GO	
-*/
+
                   --21/10/2025
 --Trigger ELIMINACION
 
@@ -1006,4 +1008,133 @@ GO
 
 
 				--Clase 28/10/2025
---
+/*
+Crear un trigger que verifique que al actualizar el nombre de la comuna verifique 
+que tenga al menos 3 letras y que no contenga espacios en blanco al inicio y al final del nombre.
+Asimismo que se asegure que el nombre actualizado de la comuna quede almacenado sin espacios en blanco
+al inicio y al final
+*/
+--Que sigue con el anterior 
+
+
+		CREATE or alter TRIGGER Comuna_Update
+		   ON  Comuna
+		   AFTER Update
+		AS 
+		BEGIN
+			SET NOCOUNT ON;
+
+	
+			if exists(
+						select trim(com.nombre_comuna), count(*)
+						from Comuna com, inserted ins 
+						where trim(com.nombre_comuna)=trim(ins.nombre_comuna)
+						group by trim(com.nombre_comuna)
+						having count(*)>1
+						)
+			begin
+				Raiserror('Se ha modificado el nombre de una comuna que ya existe ',16,1)
+				rollback
+			end
+
+
+			else if	exists (select com.nombre_comuna
+							from Comuna com
+							inner join inserted ins on com.id_comuna=ins.id_comuna
+							where len(trim(com.nombre_comuna))<3
+						)
+			begin
+				Raiserror('El nombre de la comuna debe tener al menos 3 letras',16,1)
+				rollback
+			end
+	
+	
+			else 
+			begin 
+				update COMUNA 
+				set nombre_comuna=trim(ins.nombre_comuna)
+				from COMUNA com, inserted ins
+				where com.id_comuna=ins.id_comuna
+			end
+		END
+		GO
+
+
+				--Clase 30/10/2025
+--Diseñar el proceso de prestamo de peliculas 
+
+--Funcion para obtener numero de dias 
+			CREATE or alter FUNCTION Dias_Prestamo
+			(
+				@Id_pelicula smallint
+			)
+			RETURNS tinyint
+			AS
+			BEGIN
+				RETURN (SELECT  pel.dias_prestamo
+						from PELICULA pel
+						where pel.id_pelicula=@Id_pelicula)
+			END
+			GO
+
+--SP para agregar el prestamo
+
+			CREATE PROCEDURE ArrendarPelicula
+				@Id_pelicula smallint,	
+				@Numero_copia tinyint,
+				@Rut_cliente nchar(10)
+			AS
+			BEGIN
+	
+				SET NOCOUNT ON;
+
+				INSERT INTO [dbo].[PRESTAMO]
+					   ([id_pelicula]
+					   ,[numero_copia]
+					   ,[rut_cliente]
+					   ,[fecha_prestamo]
+					   ,[fecha_devolucion]
+					   ,[fecha_entrega]
+					   ,[monto_multa])
+				 VALUES (
+				 @id_pelicula,@numero_copia,@rut_cliente,getdate(), 
+				 dateadd(day, dbo.Dias_Arriendo(@Id_pelicula), getdate()), null, 0)
+	
+			END
+			GO
+
+select * from prestamo
+
+exec ArrendarPelicula 1,1,'2-2'
+
+
+--Trigger para cancelar prestamo
+			CREATE TRIGGER Prestamo_Insert
+			   ON  Prestamo
+			   AFTER INSERT
+			AS 
+			BEGIN
+				SET NOCOUNT ON;
+
+				if exists (
+							select ins.id_pelicula, ins.numero_copia, COUNT(*)
+							from Prestamo pre, inserted ins
+							where pre.id_pelicula=ins.id_pelicula
+							and pre.numero_copia=ins.numero_copia
+							and ins.fecha_devolucion is NULL
+							group by ins.id_pelicula, ins.numero_copia
+							having  COUNT(*)>1
+				)
+
+				begin 
+					Raiserror('Error, se ha intenado arrendar una pelicula ya arrendada , se ha cancelado el arriendo', 16,1)
+					rollback
+				end
+
+			END
+			GO
+
+
+--prefeccionar Trigger 
+
+
