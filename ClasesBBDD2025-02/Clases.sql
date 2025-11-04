@@ -1135,6 +1135,45 @@ exec ArrendarPelicula 1,1,'2-2'
 			GO
 
 
---prefeccionar Trigger 
+--agregar cosas al trigger 
+
+CREATE or alter TRIGGER Prestamo_Insert
+	ON  Prestamo
+	AFTER INSERT
+AS 
+BEGIN
+	SET NOCOUNT ON;
+
+	if exists (
+				select ins.id_pelicula, ins.numero_copia, COUNT(*)
+				from Prestamo pre, inserted ins
+				where pre.id_pelicula=ins.id_pelicula
+				and pre.numero_copia=ins.numero_copia
+				and ins.fecha_devolucion is NULL
+				group by ins.id_pelicula, ins.numero_copia
+				having  COUNT(*)>1
+	)
+	begin 
+		Raiserror('Error: se ha intenado arrendar una pelicula ya arrendada , se ha cancelado el arriendo', 16,1)
+		rollback
+	end
+
+	IF EXISTS (
+        SELECT ins.rut_cliente
+        FROM inserted ins
+        join PRESTAMO pre on ins.rut_cliente=pre.rut_cliente
+		join PELICULA pel on pre.id_pelicula=pre.id_pelicula
+		where pre.fecha_devolucion is null 
+		and DATEADD(day,pel.dias_prestamo, pre.fecha_entrega)<GETDATE()
+    )
+    BEGIN
+        Raiserror('Error: El cliente tiene películas atrasadas.', 16, 1);
+        RETURN
+    END
+END
+GO
 
 
+				--Clase 04/11/2025
+
+--
