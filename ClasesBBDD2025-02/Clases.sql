@@ -1079,7 +1079,7 @@ al inicio y al final
 
 --SP para agregar el prestamo
 
-			CREATE PROCEDURE ArrendarPelicula
+			CREATE or alter PROCEDURE ArrendarPelicula
 				@Id_pelicula smallint,	
 				@Numero_copia tinyint,
 				@Rut_cliente nchar(10)
@@ -1098,7 +1098,7 @@ al inicio y al final
 					   ,[monto_multa])
 				 VALUES (
 				 @id_pelicula,@numero_copia,@rut_cliente,getdate(), 
-				 dateadd(day, dbo.Dias_Arriendo(@Id_pelicula), getdate()), null, 0)
+				 dateadd(day, dbo.Dias_Prestamo(@Id_pelicula), getdate()), null, 0)
 	
 			END
 			GO
@@ -1168,7 +1168,7 @@ BEGIN
     )
     BEGIN
         Raiserror('Error: El cliente tiene películas atrasadas.', 16, 1);
-        RETURN
+        rollback
     END
 END
 GO
@@ -1176,4 +1176,43 @@ GO
 
 				--Clase 04/11/2025
 
+--implementar la regla de negocio que no permita que un cliente tenga mas de 3 arriendos vigentes 
+CREATE or alter TRIGGER Prestamo_Insert
+	ON  Prestamo
+	AFTER INSERT
+AS 
+BEGIN
+	SET NOCOUNT ON;
+
+	if exists (
+				select ins.id_pelicula, ins.numero_copia, COUNT(*)
+				from Prestamo pre, inserted ins
+				where pre.id_pelicula=ins.id_pelicula
+				and pre.numero_copia=ins.numero_copia
+				and ins.fecha_entrega is NULL
+				group by ins.id_pelicula, ins.numero_copia
+				having  COUNT(*)>1
+	)
+
+	begin 
+		Raiserror('Error: se ha intenado arrendar una pelicula ya arrendada , se ha cancelado el arriendo', 16,1)
+		rollback
+	end
+	else
+	if exists(
+				select pre.rut_cliente, COUNT(*)
+				from Prestamo pre, inserted ins
+				where pre.rut_cliente=ins.rut_cliente
+					and ins.fecha_entrega is NULL
+				group by pre.rut_cliente 
+				having COUNT(*)>3
+	)
+	begin 
+		Raiserror('Error: El cliente ingresado ya tiene mas de 3 arriendos de peliculas activos', 16,1)
+		rollback
+	end
+END
+GO
+
+			--Clase 6/11/2025
 --
