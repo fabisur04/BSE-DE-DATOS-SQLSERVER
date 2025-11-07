@@ -1215,4 +1215,81 @@ END
 GO
 
 			--Clase 6/11/2025
---
+--Implementar el requetmiento funcional de Devolver_Pelicula
+
+--Sp devolucion de pelicula
+							CREATE or alter PROCEDURE Devolucion_Pelicula
+								@Rut_Cliente nchar(10),
+								@ID_Pelicula smallint,
+								@Numero_Copia tinyint
+							AS
+							BEGIN
+								SET NOCOUNT ON;
+								if((select fecha_entrega from PRESTAMO where rut_cliente = @Rut_Cliente and id_pelicula= @ID_Pelicula and numero_copia=@Numero_Copia)is null)
+								update prestamo
+								set fecha_entrega=GETDATE()
+								where	@Rut_Cliente=rut_cliente and
+										@ID_Pelicula=id_pelicula and
+										@Numero_Copia=numero_copia and
+										fecha_entrega is null
+
+								
+							END
+							GO
+--trigger 
+				CREATE or alter TRIGGER Prestamo_Update
+				   ON  Prestamo
+				   AFTER Update
+				AS 
+				BEGIN
+					SET NOCOUNT ON;
+					IF exists(
+					select ins.rut_cliente
+					from inserted ins
+					where fecha_entrega>fecha_devolucion
+				   )
+
+				   update PRESTAMo
+				   set monto_multa= datediff(dd, getdate(), pre.fecha_devolucion),
+						fecha_entrega=GETDATE()
+				   from inserted ins, PRESTAMO pre
+				   where pre.rut_cliente=ins.rut_cliente and
+						pre.id_pelicula=ins.id_pelicula and
+						pre.numero_copia=ins.numero_copia and
+						pre.fecha_entrega is null and
+						getdate()>pre.fecha_devolucion
+				END
+				GO
+--obtener en un trigger masivo el monto para cada pelicula
+
+
+
+				--clase 07/11/2025
+--Determinar el monto de la multa a pagar cuando se entregue atrasada la pelicula
+
+CREATE or alter TRIGGER Prestamo_Update
+	ON  Prestamo
+	AFTER Update
+AS 
+BEGIN
+	SET NOCOUNT ON;
+	IF exists(
+	select ins.rut_cliente
+	from inserted ins
+	where fecha_entrega>fecha_devolucion
+	)
+	 
+	update PRESTAMo
+	set monto_multa= pel.arriendo_diario * datediff(dd, pre.fecha_devolucion, getdate()),
+		fecha_entrega=GETDATE()
+	from inserted ins, PRESTAMO pre, PELICULA pel
+	where pre.rut_cliente=ins.rut_cliente and
+		pre.id_pelicula=ins.id_pelicula and
+		pre.numero_copia=ins.numero_copia and
+		pre.id_pelicula=pel.id_pelicula and
+		pre.fecha_entrega is null
+		--pre.fecha_devolucion<getdate()    sin esta linea se agrega un case 
+END
+GO
+
+
