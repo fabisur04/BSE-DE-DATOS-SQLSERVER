@@ -1288,8 +1288,73 @@ BEGIN
 		pre.numero_copia=ins.numero_copia and
 		pre.id_pelicula=pel.id_pelicula and
 		pre.fecha_entrega is null
-		--pre.fecha_devolucion<getdate()    sin esta linea se agrega un case 
+		--pre.fecha_devolucion<getdate()    sin esta linea se agrega un case para crear la condicion
 END
 GO
+--Trigger con 'CASE'
 
+				CREATE or alter TRIGGER Prestamo_Update
+					ON  Prestamo
+					AFTER Update
+				AS 
+				BEGIN
+					SET NOCOUNT ON;
+					IF exists(
+					select ins.rut_cliente
+					from inserted ins
+					where fecha_entrega>fecha_devolucion
+					)
+					BEGIN
+						Raiserror('Error: La fecha de devolución no puede ser anterior a la fecha de entrega.', 16, 1);
+						ROLLBACK TRANSACTION; 
+						RETURN;
+					END; 
 
+					update pre
+					set 
+						pre.monto_multa = case
+							when ins.fecha_devolucion>DATEADD(DD,pel.dias_prestamo,pre.fecha_entrega)
+							then 
+								pel.arriendo_diario*DATEDIFF(DD, DATEadd(DD, pel.dias_prestamo, pre.fecha_entrega), ins.fecha_devolucion)
+							else 0
+						end
+					from PRESTAMO pre
+					inner join inserted ins on pre.id_pelicula=ins.id_pelicula
+						and pre.numero_copia=ins.numero_copia
+						and pre.rut_cliente=ins.rut_cliente
+					inner join PELICULA pel on pre.id_pelicula=pel.id_pelicula
+
+					where 
+						ins.fecha_devolucion is not null
+						and pre.monto_multa is null
+		
+				END
+				
+--ejercicio
+--crear un trigger en la tabla PELICULA que impida que se elimine cualquier película si actualmente
+--tiene copias prestadas (es decir, si existe al menos un registro activo en la tabla Prestamo para esa película).
+
+					cREATE TRIGGER Pelicula_Delete
+					   ON  Pelicula
+					   AFTER Delete
+					AS 
+					BEGIN
+						SET NOCOUNT ON;
+						if exists(
+							select pre.id_pelicula
+							from deleted del
+							join PRESTAMO pre on del.id_pelicula=pre.id_pelicula
+							where pre.fecha_devolucion is null
+						)
+						begin
+							raiserror('Error: no se pueden eliminar peliculas que tienen copias actualmente en prestamo', 16,1)
+							rollback
+						end 
+						else
+	
+						begin 
+							delete from PELICULA
+							where id_pelicula in (select id_pelicula from deleted)
+						end 
+					END
+					GO
