@@ -1358,3 +1358,71 @@ GO
 						end 
 					END
 					GO
+--Ejercicio.
+----Ejercitando pueba 3
+/*
+Hacer un trigger que detecte cuando en nombre_departamento se agregue un departamento con 2 o mas espacios 
+entremedio del nombre, antes o despues
+*/
+-------------------------------------------Desarrollo
+CREATE or alter TRIGGER Departamento_Update_Insert
+   ON  Departamento
+   AFTER insert, update
+AS 
+BEGIN
+	SET NOCOUNT ON;
+	if exists(
+	select ins.id_departamento
+	from inserted ins
+	where ins.nombre_departamento like '%  %'
+	or ins.nombre_departamento like ' %'
+	or ins.nombre_departamento like '% '
+	)
+	begin
+		raiserror ('No se puede tener espacios antes, despues o doble espacio dentro de los nombres', 16,1)
+		rollback
+	end 
+
+
+END
+GO
+
+/*
+Crear un trigger que impida que se le asigne un nuevo equipo a un empleado 
+(es decir, un INSERT en Equipo_Empleado), si ese empleado ya tiene un equipo "crítico" sin devolver.
+
+-Cualquier equipo cuyo Tipo_Equipo sea 'Laptop'.
+-Y que además sea de Marca 'Dell' O 'HP'.
+
+El trigger debe ejecutarse DESPUÉS de un INSERT en Equipo_Empleado y, 
+si detecta que el empleado de la nueva asignación (inserted.rut_empleado) ya tiene un equipo crítico 
+sin devolver (fecha_devolucion IS NULL), debe revertir la transacción y lanzar un error.
+*/
+CREATE TRIGGER Equipo_Empleado_Insert
+   ON  Equipo_Empleado
+   AFTER insert
+AS 
+BEGIN
+	SET NOCOUNT ON;
+	if exists(
+	select ins.rut_empleado
+	from inserted ins, Equipo_Empleado e_e, Equipo equ, Tipo_Equipo t_e, Modelo mo, Marca mar
+	where e_e.id_equipo=equ.id_equipo 
+	and		equ.id_tipo_equipo=t_e.id_tipo_equipo
+	and		mo.id_modelo=equ.id_modelo 
+	and		mo.id_marca=mar.id_marca
+	and		ins.id_equipo!=e_e.id_equipo
+	and		ins.rut_empleado=e_e.rut_empleado
+
+
+	and		t_e.nombre_tipo_equipo='Laptop'
+	and		mar.nombre_marca in ('Dell','HP')
+	and		e_e.fecha_devolucion is null
+	)
+	begin
+		raiserror('Error: no se puede asigar un equipo a un empleado que no a devuelto su equipo anterior',16,1)
+		rollback
+	end
+END
+GO
+
