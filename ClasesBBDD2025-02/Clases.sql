@@ -1426,3 +1426,285 @@ BEGIN
 END
 GO
 
+/*
+Enunciado de la Prueba
+El departamento de auditoría ha establecido una nueva "Política de Asignación Riesgosa" para proteger
+los activos de alto valor. Se debe impedir (ROLLBACK) cualquier intento de asignación de equipo 
+(un INSERT en Equipo_Empleado) si la asignación se considera "riesgosa".
+
+Una asignación es "Riesgosa" si cumple TODAS las siguientes condiciones:
+Es un Empleado Junior: Se considera "Junior" a cualquier empleado que, al momento de la asignación, tenga menos de 25 años.
+Es un Activo de Alto Valor: Se considera "Alto Valor" a cualquier equipo que sea 'Laptop' O 'Celular' (Asumir id_tipo_equipo 1=Laptop, 3=Celular).
+Es un Día de Alta Fricción: Se considera "Alta Fricción" si la asignación se realiza un Viernes O durante el mes de Diciembre.
+*/
+-------------------------------------------Desarrollo
+--Parte de funcion 
+			CREATE or alter FUNCTION Riesgoso
+			(
+				@Rut_Empleado nvarchar(10),
+				@Fecha_Asignacion date,
+				@Id_TipoEquipo int
+			)
+			RETURNS bit
+			AS
+			BEGIN
+				DECLARE @EsRiesgoso bit=0
+				declare @EsJunior bit=0
+				declare @EsAltoValor bit=0
+				declare @EsDia bit=0
+
+				Declare @Fecha_Nacmiento date
+				Declare @EdadEmpleado tinyint
+
+				SELECT  @Fecha_Nacmiento=fecha_nacimiento
+				from Empleado
+				where rut_empleado=@Rut_Empleado
+
+				set @EdadEmpleado=DATEDIFF(year,@Fecha_Nacmiento, @Fecha_Asignacion)
+
+				set @EsJunior = case
+					when @EdadEmpleado<25 then 1
+					else 0
+				end
+
+				set @EsAltoValor=case
+					when @Id_TipoEquipo in (1,3) then 1
+					else 0
+				End
+
+				set @EsDia = case
+					when DATENAME(WEEKDAY, @Fecha_Asignacion)='friday' then 1
+					when DATEPART(MONTH, @Fecha_Asignacion)=12 then 1
+					else 0
+				end
+	
+				if @EsJunior=1 and @EsAltoValor =1 and @EsDia =1
+				begin
+					set @EsRiesgoso=1
+				end
+				RETURN @EsRiesgoso
+
+			END
+			GO
+--Parte de Trigger
+			CREATE TRIGGER Empleado_Insert
+			   ON  equipo_Empleado
+			   AFTER insert
+			AS 
+			BEGIN
+				SET NOCOUNT ON;
+				if exists(
+					select ins.id_equipo_empleado
+					from inserted ins
+					join Equipo equ on equ.id_equipo=ins.id_equipo
+					where 
+						dbo.Riesgoso(
+							ins.rut_empleado,
+							ins.fecha_asignacion,
+							equ.id_tipo_equipo
+						)=1
+				)
+				begin
+					raiserror('Error: No se permite una asignacion riesgosa',16,1)
+					rollback
+				end
+			END
+			GO
+
+
+/*
+El departamento de Recursos Humanos y el de Activos de TI han implementado una nueva política de "Salida Limpia".
+No se puede eliminar un registro de la tabla Empleado si este no cumple con las condiciones de auditoría de salida.
+
+Se debe impedir y revertir (ROLLBACK) la eliminación (DELETE) de un empleado si una 
+función de validación (fn_ValidarSalidaLimpia) determina que el empleado no está "limpio".
+
+Un empleado NO está "limpio" (la función debe devolver 1) si se cumple CUALQUIERA de las siguientes condiciones:
+El empleado todavía tiene equipos asignados (cualquier registro en Equipo_Empleado con fecha_devolucion IS NULL).
+El empleado está siendo eliminado durante su período de prueba (definido como los primeros 90 días desde su fecha_contratacion).
+El empleado devolvió un activo de "Alto Valor" (Tipo 'Laptop' o 'Celular', id_tipo_equipo 1 o 3) 
+en los últimos 30 días, pero el período de asignación de ese activo fue menor a 6 meses 
+(esto levanta sospechas de una auditoría de "uso rápido").
+*/
+--Parte Funcion
+			CREATE or alter FUNCTION ValidarSalidaLimpia
+			(
+				@Rut_Empleado nvarchar(10),
+				@Fecha_Contratacion date
+			)
+			RETURNS bit
+			AS
+			BEGIN
+				declare @BloquearEliminacion bit=0
+				declare @FechaHoy date=getdate()
+
+				if exists(
+					select e_e.rut_empleado
+					from Equipo_Empleado e_e
+					where	e_e.rut_empleado=@Rut_Empleado 
+					and		e_e.fecha_devolucion is null
+				)
+				begin
+					set @BloquearEliminacion= 1
+					return @BloquearEliminacion
+				end
+
+				if (
+				@FechaHoy <= DATEADD(DD, 90, @Fecha_Contratacion)
+				)begin
+					set @BloquearEliminacion =1
+					return @BloquearEliminacion
+				end
+
+				if exists(
+					select  e_e.id_equipo
+					from Equipo_Empleado e_e
+					join Equipo equ on equ.id_equipo=e_e.id_equipo
+					where e_e.rut_empleado=@Rut_Empleado
+					and		e_e.fecha_devolucion is not null 
+					and		case
+								when equ.id_tipo_equipo in(1,3) then 1
+								else 0
+							end=1
+					and DATEDIFF(dd, e_e.fecha_devolucion, GETDATE())<=30
+					and DATEDIFF(MM, e_e.fecha_asignacion, e_e.fecha_devolucion) < 6
+				)
+				begin
+					set @BloquearEliminacion =1
+					return @BloquearEliminacion
+				end
+
+				RETURN @BloquearEliminacion
+
+			END
+			GO
+
+
+--Parte Trigger
+			CREATE or alter TRIGGER Empleado_Delete
+			   ON  Empleado
+			   AFTER Delete
+			AS 
+			BEGIN
+				SET NOCOUNT ON;
+				if exists(
+				select del.rut_empleado
+				from deleted del 
+				where dbo.ValidarSalidaLimpia(
+						del.rut_empleado,
+						del.fecha_contratacion
+						)=1
+				)
+				begin
+					raiserror('Error: La eliminacion fue cancelada, debido a politicas impuestas',16,1)
+					rollback
+				end
+
+			END
+			GO
+
+
+/*
+La empresa implementará una nueva política de "Elegibilidad Premium".
+Ciertos equipos, definidos como "Premium", solo pueden ser asignados a empleados que 
+cumplan con criterios de antigüedad y en fechas específicas para evitar asignaciones durante el 
+"congelamiento de activos" de fin de año.
+
+Definiciones Clave:
+Activo Premium (Usar CASE): Un equipo se considera "Premium" si su Marca es 'Dell' O 'HP' (asumir id_marca 1=Dell, 2=HP).
+Empleado No Elegible (Lógica de Fechas): Un empleado no es elegible si cumple ALGUNA de estas condiciones:
+Antigüedad Insuficiente: Tiene 3 años o menos en la empresa (calculado desde fecha_contratacion hasta el día de hoy, GETDATE()).
+Congelamiento de Activos: La asignación se intenta realizar durante el período de 
+	congelamiento (entre el 15 de Diciembre y el 31 de Diciembre de cualquier año).
+*/
+--Funcion 
+CREATE or alter FUNCTION veiricarElegibilidadPremium
+(
+	@Rut_Empleado nvarchar(10),
+	@id_marca int,
+	@Fecha_Asignacion date
+)
+RETURNS bit
+AS
+BEGIN
+	DECLARE @Bloquear bit =0
+	declare @EsPremium bit=0
+	declare @AntiguedadSuficiente bit =0
+	declare @EnCongelamiento bit =0
+
+	set @EsPremium = case	
+		when @id_marca in (1,2) then 1
+		else 0
+	end
+
+	if @EsPremium = 0
+		Return @Bloquear
+	
+	declare @Fecha_Contratacion date
+	select @Fecha_Contratacion=emp.fecha_contratacion
+	from Empleado emp
+	where emp.rut_empleado=@Rut_Empleado
+
+	set @AntiguedadSuficiente = case
+		when DATEDIFF(YEAR, @Fecha_Contratacion, GETDATE())<=3 then 1
+		else 0
+	end
+
+	set @EnCongelamiento = case
+		when MONTH(@Fecha_Asignacion)=12 and DAY(@Fecha_Asignacion) between 15 and 31 then 1
+		else 0
+	end
+
+	if (@AntiguedadSuficiente=1 or @EnCongelamiento=1)
+		set @Bloquear=1
+
+	RETURN @Bloquear
+
+END
+GO
+--Trigger
+CREATE TRIGGER Equipo_Empleado_Insert
+   ON  equipo_Empleado 
+   AFTER insert
+AS 
+BEGIN
+	SET NOCOUNT ON;
+
+	if exists(
+		select ins.id_equipo
+		from inserted ins
+		join Equipo equ on equ.id_equipo = ins.id_equipo
+		join Modelo mo on equ.id_modelo=mo.id_modelo
+		where dbo.veiricarElegibilidadPremium(
+			ins.rut_empleado,
+			mo.id_marca,
+			ins.Fecha_asignacion
+		)=1
+	)
+	begin
+		raiserror('Error: La asignacion fue bloqueada',16,1)
+		rollback
+	end
+END
+GO
+
+--SP
+
+
+CREATE PROCEDURE auditoriaAsignacionesPremium
+AS
+BEGIN
+	SET NOCOUNT ON;
+	SELECT emp.rut_empleado
+	from Equipo_Empleado e_e, Equipo equ, Modelo mo, Marca mar, Empleado emp
+	where	e_e.rut_empleado=emp.rut_empleado
+	and		e_e.id_equipo=equ.id_equipo
+	and		equ.id_modelo=mo.id_modelo
+	and		mo.id_marca=mar.id_marca
+
+
+	and		e_e.fecha_devolucion is null
+	and		mar.id_marca in (1,2)
+	and		DATEDIFF(yy,emp.fecha_contratacion, GETDATE())<=3
+END
+GO
